@@ -26,51 +26,69 @@ mode-verify:
 # CMake configure step.
 [unix]
 configure TYPE='Release' CXX='g++' CC='gcc':
-    cmake . -B build/{{TYPE}} -DCMAKE_BUILD_TYPE={{TYPE}} -DCMAKE_CXX_COMPILER={{CXX}} -DCMAKE_C_COMPILER={{CC}}
-    cmake . -B build/{{TYPE}} -DCMAKE_BUILD_TYPE={{TYPE}} -DCMAKE_CXX_COMPILER={{CXX}} -DCMAKE_C_COMPILER={{CC}}
+    cmake . -B build/{{CC}}/{{TYPE}} -DCMAKE_BUILD_TYPE={{TYPE}} -DCMAKE_CXX_COMPILER={{CXX}} -DCMAKE_C_COMPILER={{CC}}
+    cmake . -B build/{{CC}}/{{TYPE}} -DCMAKE_BUILD_TYPE={{TYPE}} -DCMAKE_CXX_COMPILER={{CXX}} -DCMAKE_C_COMPILER={{CC}}
 
 # CMake build step. May configure fist.
 [unix]
 build TYPE='Release' CXX='g++' CC='gcc': (configure TYPE CXX CC)
-    cmake --build build/{{TYPE}} --config {{TYPE}}
+    cmake --build build/{{CC}}/{{TYPE}} --config {{TYPE}}
 
 # Runs the program. May build or configure and build first.
 [unix]
 run TYPE='Release' CXX='g++' CC='gcc' FILTER='.': (build TYPE CXX CC)
-    build/{{TYPE}}/{{APP}} --benchmark_filter={{FILTER}}
+    build/{{CC}}/{{TYPE}}/{{APP}} --benchmark_filter={{FILTER}}
 
-# Runs app for an aggregate report, does not build for you.
+# Runs Relase app for an aggregate report, does not build for you.
 [unix]
-json REPS='15' FILTER='.':
-    build/Release/{{APP}} --benchmark_format=json --benchmark_repetitions={{REPS}} --benchmark_report_aggregates_only=true --benchmark_filter={{FILTER}} --benchmark_perf_counters=CACHE-MISSES,CACHE-REFERENCES,CYCLES,INSTRUCTIONS,BRANCHES
+json REPS='15' FILTER='.' CC='gcc':
+    build/{{CC}}/Release/{{APP}} --benchmark_format=json --benchmark_repetitions={{REPS}} --benchmark_report_aggregates_only=true --benchmark_filter={{FILTER}} --benchmark_perf_counters=CACHE-MISSES,CACHE-REFERENCES,CYCLES,INSTRUCTIONS,BRANCHES
 
 # Configures and builds for MinGW.
 [unix, script]
 build-mingw64 TYPE='Release':
     mingw-env x86_64-w64-mingw
-    mkdir build/mingwbuild || true
-    x86_64-w64-mingw32-cmake -B build/mingwbuild -DCMAKE_BUILD_TYPE={{TYPE}}
-    x86_64-w64-mingw32-cmake -B build/mingwbuild -DCMAKE_BUILD_TYPE={{TYPE}}
-    cmake --build build/mingwbuild
-    cp build/mingwbuild/_deps/benchmark-build/src/libbenchmark.dll build/mingwbuild/
+    mkdir build/mingw/{{TYPE}} || true
+    x86_64-w64-mingw32-cmake -B build/mingw/{{TYPE}} -DCMAKE_BUILD_TYPE={{TYPE}}
+    x86_64-w64-mingw32-cmake -B build/mingw/{{TYPE}} -DCMAKE_BUILD_TYPE={{TYPE}}
+    cmake --build build/mingw/{{TYPE}}
+    cp build/mingw/{{TYPE}}/_deps/benchmark-build/src/libbenchmark.dll build/mingw/{{TYPE}}/
 
-# Runs MinGW app for an aggregate report, does not build for you.
+# Runs MinGW Release app for an aggregate report, does not build for you.
 [unix]
 json-mingw REPS='15' FILTER='.':
-    build/mingwbuild/{{APP}}.exe --benchmark_format=json --benchmark_repetitions={{REPS}} --benchmark_report_aggregates_only=true --benchmark_filter={{FILTER}}
+    build/mingw/Release/{{APP}}.exe --benchmark_format=json --benchmark_repetitions={{REPS}} --benchmark_report_aggregates_only=true --benchmark_filter={{FILTER}}
+
+# Configures and builds for msvc.
+[unix]
+build-msvc TYPE='Release':
+    msvc-x64-cmake -B build/msvc/{{TYPE}} -DCMAKE_BUILD_TYPE={{TYPE}}
+    msvc-x64-cmake --build build/msvc/{{TYPE}}
+
+# Runs msvc Release app for an aggregate report, does not build for you.
+[unix]
+json-msvc REPS='15' FILTER='.':
+    build/msvc/Release/{{APP}}.exe --benchmark_format=json --benchmark_repetitions={{REPS}} --benchmark_report_aggregates_only=true --benchmark_filter={{FILTER}}
+
+
+[unix]
+build-all TYPE='Release':
+    just configure Release g++ gcc
+    just build Release g++ gcc
+    just configure Release clang++ clang
+    just build Release clang++ clang
+    just build-mingw64 Release
+    just build-msvc Release
+    
 
 # Runs benchmarks in all compilers, builds and configures, outputs json aggregate.
 [unix]
 benchmark REPS='15' FILTER='.':
     just mode-performance
-    just configure Release g++ gcc
-    just build Release g++ gcc
-    sudo nice -n -20 taskset -c 0 just json {{REPS}} {{FILTER}} > results_gcc.json
-    just configure Release clang++ clang
-    just build Release clang++ clang
-    sudo nice -n -20 taskset -c 0 just json {{REPS}} {{FILTER}} > results_clang.json
-    just build-mingw64 Release
+    sudo nice -n -20 taskset -c 0 just json {{REPS}} {{FILTER}} gcc > results_gcc.json
+    sudo nice -n -20 taskset -c 0 just json {{REPS}} {{FILTER}} clang > results_clang.json
     sudo nice -n -20 taskset -c 0 just json-mingw {{REPS}} {{FILTER}} > results_mingw.json
+    sudo nice -n -20 taskset -c 0 just json-msvc {{REPS}} {{FILTER}} > results_msvc.json
     just mode-powersave
     just mode-verify
 
@@ -111,3 +129,4 @@ charter-run-dir DIR:
     mkdir -p {{DIR}}
     cp results_*.json {{DIR}}
     python gen/charter.py {{DIR}}
+

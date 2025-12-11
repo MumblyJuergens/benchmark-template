@@ -1,39 +1,42 @@
 import os
 import sys
 
-# import plotly.express as px
 import plotly.graph_objects as go
 import rapidjson
 
 
-def get_data(filename: str):
+def get_benchmarks(filename: str):
     with open(os.path.join(sys.argv[1], filename)) as jsonfile:
         data = rapidjson.load(jsonfile)
-    return data["benchmarks"]
+    return [b for b in data["benchmarks"] if b["aggregate_name"] == "mean"]
+
+
+def collect_data(
+    measurement: str, compilers: list[str]
+) -> tuple[list[list[float]], list[str]]:
+    measures: list[list[float]] = []
+    names: list[str] = []
+    for compiler in compilers:
+        benchmarks = get_benchmarks(f"results_{compiler.lower()}.json")
+        measures.append([x[measurement] for x in benchmarks])
+        if len(names) == 0:
+            names = [x["run_name"] for x in benchmarks]
+    return (measures, names)
 
 
 def doit():
-    gccdata = get_data("results_gcc.json")
-    clangdata = get_data("results_clang.json")
-    mingwdata = get_data("results_mingw.json")
+    compilers = ["GCC", "Clang", "MinGW", "MSVC"]
+    measurements, names = collect_data("cpu_time", compilers)
 
-    gccmean = [b for b in gccdata if b["aggregate_name"] == "mean"]
-    clangmean = [b for b in clangdata if b["aggregate_name"] == "mean"]
-    mingwmean = [b for b in mingwdata if b["aggregate_name"] == "mean"]
-
-    def getme(who, what):
-        return [x[what] for x in who]
-
-    name = getme(gccmean, "run_name")
+    compilers = [*compilers, "Average"]
+    measurements.append([sum(col) / len(col) for col in zip(*measurements)])
 
     fig = go.Figure(
         data=[
-            go.Bar(name="GCC", x=name, y=getme(gccmean, "cpu_time")),
-            go.Bar(name="Clang", x=name, y=getme(clangmean, "cpu_time")),
-            go.Bar(name="MinGW", x=name, y=getme(mingwmean, "cpu_time")),
+            go.Bar(name=compiler, x=names, y=measures)
+            for compiler, measures in zip(compilers, measurements)
         ]
     )
-
     fig.update_layout(barmode="group")
     fig.show()
 
